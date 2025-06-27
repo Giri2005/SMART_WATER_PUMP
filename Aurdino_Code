@@ -1,0 +1,129 @@
+#include <ESP8266WiFi.h>
+
+// Replace these with your Wi-Fi credentials
+const char* ssid = "IDEALAB";
+const char* password = "AIDL@123";
+
+// Create a Wi-Fi server on port 80
+WiFiServer server(80);
+
+#define RELAY_PIN D1 // Relay connected to D1 (GPIO5)
+
+void setup() {
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH); // Ensure relay is off initially (active low)
+
+  Serial.begin(115200);
+  delay(10);
+
+  // Debug message
+  Serial.println();
+  Serial.println("NodeMCU is starting up...");
+  Serial.println("Relay is initially OFF");
+
+  // Connect to Wi-Fi
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  // Start the server
+  server.begin();
+  Serial.println("Server started");
+
+  // Manual relay test instructions
+  Serial.println("Type 'on' to turn the relay ON and 'off' to turn the relay OFF");
+}
+
+void loop() {
+  // Listen for incoming clients
+  WiFiClient client = server.available();
+
+  if (client) {
+    Serial.println("New Client.");
+    String currentLine = ""; // make a String to hold incoming data from the client
+
+    while (client.connected()) {
+      if (client.available()) { // if there's bytes to read from the client
+        char c = client.read(); // read a byte
+        Serial.write(c); // print it out the serial monitor
+        if (c == '\n') { // if the byte is a newline character
+          // if the current line is blank, you got two newline characters in a row.
+          // that's the end of the client HTTP request, so send a response:
+          if (currentLine.length() == 0) {
+            // HTTP headers have been sent, now respond with the webpage content
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println();
+
+            // the content of the HTTP response follows the header:
+            client.print("<!DOCTYPE html><html>");
+            client.print("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+            client.print("<style>");
+            client.print("body { font-family: Arial, sans-serif; text-align: center; background-color: #f0f0f0; }");
+            client.print(".button { display: inline-block; padding: 10px 20px; font-size: 20px; cursor: pointer; text-align: center; text-decoration: none; outline: none; color: #fff; background-color: #4CAF50; border: none; border-radius: 15px; box-shadow: 0 5px #999; }");
+            client.print(".button:hover { background-color: #3e8e41 }");
+            client.print(".button:active { background-color: #3e8e41; box-shadow: 0 2px #666; transform: translateY(4px); }");
+            client.print("</style></head>");
+            client.print("<body><h1>Smart Pump Controller</h1>");
+            client.print("<p>Click below to button to On / Off the motor pump</p>");
+            client.print("<p><a href=\"/on\" class=\"button\">Turn ON</a></p>");
+            client.print("<p><a href=\"/off\" class=\"button\">Turn OFF</a></p>");
+            client.print("</body></html>");
+
+            // The HTTP response ends with another blank line
+            client.println();
+            break;
+          } else {
+            // Clear currentLine
+            currentLine = "";
+          }
+        } else if (c != '\r') {
+          // Add every character to the currentLine string
+          currentLine += c;
+        }
+
+        // Check if the currentLine ends with "GET /on"
+        if (currentLine.endsWith("GET /on")) {
+          digitalWrite(RELAY_PIN, HIGH); // Turn the pump on
+          Serial.println("Relay ON");
+        }
+        // Check if the currentLine ends with "GET /off"
+        if (currentLine.endsWith("GET /off")) {
+          digitalWrite(RELAY_PIN, LOW); // Turn the pump off
+          Serial.println("Relay OFF");
+        }
+      }
+    }
+    // close the connection:
+    client.stop();
+    Serial.println("Client Disconnected.");
+  }
+
+  // Manual relay control via Serial Monitor
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // Remove any trailing newline characters
+
+    if (command == "on") {
+      digitalWrite(RELAY_PIN, LOW);
+      Serial.println("Manual Relay ON");
+    } else if (command == "off") {
+      digitalWrite(RELAY_PIN, HIGH);
+      Serial.println("Manual Relay OFF");
+    } else {
+      Serial.println("Invalid command. Type 'on' or 'off'");
+    }
+  }
+}
